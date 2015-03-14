@@ -1,0 +1,62 @@
+<html>
+	<head>
+		<title>WebGL particle system - 2015 by Sascha Willems (www.saschawillems.de)</title>
+
+		<script>
+	  /*
+	  @licstart  The following is the entire license notice for the
+	  JavaScript and html code in this page.
+
+	  Copyright (C) 2015 by Sascha Willems (www.saschawillems.de)
+
+	  The JavaScript code in this page is free software: you can
+	  redistribute it and/or modify it under the terms of the GNU
+	  General Public License (GNU GPL) as published by the Free Software
+	  Foundation, either version 3 of the License, or (at your option)
+	  any later version.  The code is distributed WITHOUT ANY WARRANTY;
+	  without even the implied warranty of MERCHANTABILITY or FITNESS
+	  FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+	  @licend  The above is the entire license notice
+	  for the JavaScript code in this page.
+	  */
+	  </script>
+
+		<script id="shader-fs" type="x-shader/x-fragment">
+			precision highp float;
+
+			uniform sampler2D sTexture;
+			varying vec4 vColor;
+
+			void main(void) {
+				gl_FragColor = texture2D(sTexture, gl_PointCoord) * vColor;
+			}
+		</script>
+
+		<script id="shader-vs" type="x-shader/x-vertex">
+			attribute vec3 vertexPosition;
+			attribute vec3 vertexColor;
+
+			uniform mat4 modelViewMatrix;
+			uniform mat4 perspectiveMatrix;
+
+			varying vec4 vColor;
+
+ 			void main(void) {
+				vec4 mvPosition = modelViewMatrix * vec4( vertexPosition, 1.0 );
+				gl_PointSize = 32.0;
+				gl_Position = perspectiveMatrix * modelViewMatrix * vec4(vertexPosition, 1.0);
+				vColor = vec4(vertexColor, 0.5);
+			}
+		</script>
+
+		<script type="text/javascript" src="particles.js"></script>
+
+		<script type="text/javascript">
+			window.onload = initScene;
+		</script>
+	</head>
+	<body style="background:#000000;">
+		<canvas id="canvas" style = 'position: absolute; left: 0px; top: 0px;'></canvas>
+	</body>
+</html>
