@@ -1,0 +1,467 @@
+<html>
+
+<head>
+  <title>WebGL Earth</title>
+  <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+  <script>
+  /*
+  @licstart  The following is the entire license notice for the
+  JavaScript and html code in this page.
+
+  Copyright (C) 2015 by Sascha Willems (www.saschawillems.de)
+
+  Source can be found at https://github.com/SaschaWillems
+
+  The JavaScript code in this page is free software: you can
+  redistribute it and/or modify it under the terms of the GNU
+  General Public License (GNU GPL) as published by the Free Software
+  Foundation, either version 3 of the License, or (at your option)
+  any later version.  The code is distributed WITHOUT ANY WARRANTY;
+  without even the implied warranty of MERCHANTABILITY or FITNESS
+  FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+  @licend  The above is the entire license notice
+  for the JavaScript code in this page.
+  */
+  </script>
+</head>
+
+<body>
+
+  <canvas id="webGLcanvas" style='position: absolute; left: 0px; top: 0px;' ></canvas>
+  <div id="hud" ng-controller="hudController">
+    <div id="fps" style='position: absolute; left: 5px; top: 5px;'><font color="white">{{ fps }}</font></div>
+  </div>
+
+  <script type="text/javascript" src="external/gl-Matrix-min.js"></script>
+  <script type="text/javascript" src="external/angular.min.js"></script>
+  <script type="text/javascript" src="vertexBufferObject.js"></script>
+  <script type="text/javascript" src="earth.js"></script>
+
+  <!-- Globe shaders -->
+  <script id="shader-globe-fs" type="x-shader/x-fragment">
+    // Based on a render monkey (ATI, no longer available) shader and tweaked for Projekt "W"
+    precision mediump float;
+
+    uniform sampler2D uColorMapDay, uColorMapNight, uCloudMap;
+    uniform float uCloudPosition;
+
+    varying float vDiffuse;
+    varying vec3 vSpecular;
+    varying vec2 vTexCoord;
+
+    const float Terminator = 0.3;
+    const float InvTerminator = 1.0 / (2.0 * Terminator);
+
+    void main (void)
+    {
+        // Cloud layver and gloss level are stored in red and green channel of cloud map texture
+        float clouds = texture2D(uCloudMap, vec2(vTexCoord.s + uCloudPosition, vTexCoord.t)).r;
+        float gloss  = texture2D(uCloudMap, vec2(vTexCoord.s, vTexCoord.t)).g;
+
+        // load daytime color, plus a specular component modulated by the gloss map
+        vec3 daytime = texture2D(uColorMapDay, vTexCoord).rgb * vDiffuse + vSpecular * gloss;
+
+        // mix in diffusely-lit clouds, modulated by the cloud opacity
+        daytime = mix(daytime, vec3(abs(vDiffuse)), clouds);
+
+        // load night image, modulated by cloud opacity
+        vec3 nighttime = texture2D(uColorMapNight, vTexCoord).rgb * (1.0 - clouds);
+
+        // assume day, to start
+        vec3 color = daytime;
+
+        // if fully dark, select night
+        if (vDiffuse < -Terminator) {
+            color = nighttime;
+        }
+
+        // within the twilight zone, mix night/day
+        if (abs(vDiffuse) < Terminator ) {
+            color = mix(nighttime, daytime, (vDiffuse + Terminator) * InvTerminator);
+        }
+
+        gl_FragColor = vec4(color, 1.0);
+    }
+  </script>
+
+  <script id="shader-globe-vs" type="x-shader/x-vertex">
+    attribute vec4 aVertexPosition;
+    attribute vec3 aNormal;
+    attribute vec2 aTextureCoord;
+
+    uniform float cos_time_0_2PI;
+    uniform float sin_time_0_2PI;
+    uniform mat4 uPMatrix;
+    uniform mat4 uMVMatrix;
+    uniform mat3 uNormalMatrix;
+    uniform float season;
+
+    varying float vDiffuse;
+    varying vec3 vSpecular;
+    varying vec2 vTexCoord;
+
+    void main(void)
+    {
+        // calculate vertex position in eye coordinates
+        vec4 ecPosition = uMVMatrix * aVertexPosition;
+
+        vec3 normal = normalize(uNormalMatrix * aNormal);
+
+        // compute the light vector pointing toward the sun, in model coordinates
+        // x,y compose the longitude and z the (seasonal) lattitude of the nadir point.
+        vec3 lightVec = normalize(uNormalMatrix * vec3(cos_time_0_2PI, season, sin_time_0_2PI));
+
+        vec3 reflectVec = reflect(-lightVec, normal);
+        vec3 viewVec = normalize(vec3 (-ecPosition));
+
+        // Calculate specular light intensity, scale down and apply a slightly yellowish tint.
+        float specIntensity = pow(max(dot(reflectVec, viewVec), 0.0), 8.0);
+        vSpecular = (specIntensity * 0.3) * vec3 (1.0, 0.941, 0.898);
+
+        // Calculate a diffuse light intensity
+        vDiffuse = dot(lightVec, normal);
+
+        vTexCoord = aTextureCoord;
+        gl_Position = uPMatrix * uMVMatrix * aVertexPosition;
+    }
+  </script>
+
+  <!-- Atmosphere shaders -->
+  <script id="shader-atmosphere-fs" type="x-shader/x-fragment">
+      precision mediump float;
+
+      varying vec4 color;
+
+      void main(void) {
+        gl_FragColor = color;
+      }
+  </script>
+
+  <script id="shader-atmosphere-vs" type="x-shader/x-vertex">
+      attribute vec3 aVertexPosition;
+      attribute vec4 aColor;
+
+      uniform mat4 uMVMatrix;
+      uniform mat4 uPMatrix;
+
+      varying vec4 color;
+
+      void main(void) {
+          gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+          color = aColor;
+      }
+  </script>
+
+  <!-- Basic texturing shaders -->
+  <script id="shader-base-fs" type="x-shader/x-fragment">
+      precision mediump float;
+      uniform sampler2D sTexture;
+      varying vec2 vTexCoord;
+      void main(void) {
+          gl_FragColor = texture2D(sTexture, vTexCoord);
+      }
+  </script>
+
+  <script id="shader-base-vs" type="x-shader/x-vertex">
+      attribute vec3 aVertexPosition;
+      attribute vec2 aTextureCoord;
+      uniform mat4 uMVMatrix;
+      uniform mat4 uPMatrix;
+      varying vec2 vTexCoord;
+      void main(void) {
+          gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+          vTexCoord = aTextureCoord;
+      }
+  </script>
+
+  <script type="text/javascript">
+
+    const deg_to_rad = Math.PI / 180.0;
+    const rad_to_deg = 1/(Math.PI / 180.0);
+    const PI = Math.PI;
+
+    var gl;
+    var canvas;
+
+    var firstRenderInterval;
+    var startTime;
+    var lastTimeStamp;
+    var lastFpsTimeStamp;
+    var framesPerSecond = 0;
+    var frameCount = 0;
+    var timeFactor = 0;
+
+    var hudScope;
+
+    function textures() {
+      var background = null;
+    }
+
+    function shaders() {
+      var base = null;
+      var globe = null;
+      var atmosphere = null;
+    }
+
+    function vbos() {
+      var background = null;
+    }
+
+    var earth;
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      if (gl !== null) {
+        gl.viewportWidth = canvas.width;
+        gl.viewportHeight = canvas.height;
+      }
+    }
+
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("experimental-webgl");
+            gl.viewportWidth = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } catch (e) {
+        }
+        if (!gl) {
+            alert("Time to panic! Could not init WebGL ~(;,;)~");
+        }
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthFunc(gl.LEQUAL);
+    }
+
+    function initScene() {
+      loadShaders();
+      earth = new Earth(shaders.globe, shaders.atmosphere);
+      earth.generate();
+
+      var vertices = [0,0,0, 0,1,0, 1,0,0, 0,1,0, 1,1,0, 1,0,0];
+      var texcoords = [0,0, 0,1, 1,0, 0,1, 1,1, 1,0];
+
+      vbos.background = new vertexBufferObject();
+      vbos.background.setVertices(vertices, shaders.base.vertexPositionAttribute);
+      vbos.background.setTextureCoordinates(texcoords, shaders.base.texcoordAttribute, 2);
+
+      loadTextures();
+    }
+
+    function handleTextureLoaded(image, texture) {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      var ext = gl.getExtension("WEBKIT_EXT_texture_filter_anisotropic");
+      if (ext != null) {
+        gl.texParameterf(gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+      };
+    }
+
+    function loadTexture(src) {
+      var image = new Image();
+      var texture = gl.createTexture();
+      image.src = src;
+      image.onload = function() {handleTextureLoaded(image, texture); };
+      return texture;
+    }
+
+    function loadTextures() {
+      earth.colorMapDay = loadTexture("./data/textures/earth_colormap_day.jpg");
+      earth.colorMapNight = loadTexture("./data/textures/earth_colormap_night.jpg");
+      earth.cloudMap =  loadTexture("./data/textures/earth_cloudmap.jpg");
+      textures.background = loadTexture("./data/textures/eso_milkyway.jpg");
+    }
+
+    function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+
+        var str = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                str += k.textContent;
+            }
+            k = k.nextSibling;
+        }
+
+        var shader;
+        if (shaderScript.type == "x-shader/x-fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (shaderScript.type == "x-shader/x-vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+            return null;
+        }
+
+        gl.shaderSource(shader, str);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(shaderScript.type + "\n" + gl.getShaderInfoLog(shader));
+            return null;
+        }
+
+        return shader;
+    }
+
+    function loadShader(vertexShaderScript, fragmentShaderScript) {
+      var shader = gl.createProgram();
+      var vertexShader = getShader(gl, vertexShaderScript);
+      var fragmentShader = getShader(gl, fragmentShaderScript);
+      gl.attachShader(shader, vertexShader);
+      gl.attachShader(shader, fragmentShader);
+      gl.linkProgram(shader);
+      if (!gl.getProgramParameter(shader, gl.LINK_STATUS)) {
+          alert("Could not initialise shaders");
+      }
+      gl.useProgram(shader);
+      return(shader);
+    }
+
+    function loadShaders() {
+        // Simple base shader (texturing only)
+        shaders.base = loadShader("shader-base-vs", "shader-base-fs");
+
+        shaders.base.vertexPositionAttribute = gl.getAttribLocation(shaders.base, "aVertexPosition");
+        shaders.base.texcoordAttribute = gl.getAttribLocation(shaders.base, "aTextureCoord");
+
+        shaders.base.pMatrixUniform = gl.getUniformLocation(shaders.base, "uPMatrix");
+        shaders.base.mvMatrixUniform = gl.getUniformLocation(shaders.base, "uMVMatrix");
+
+        // Globe shader
+        shaders.globe = loadShader("shader-globe-vs", "shader-globe-fs");
+
+        shaders.globe.vertexPositionAttribute = gl.getAttribLocation(shaders.globe, "aVertexPosition");
+        shaders.globe.normalAttribute = gl.getAttribLocation(shaders.globe, "aNormal");
+        shaders.globe.texcoordAttribute = gl.getAttribLocation(shaders.globe, "aTextureCoord");
+
+        shaders.globe.pMatrixUniform = gl.getUniformLocation(shaders.globe, "uPMatrix");
+        shaders.globe.mvMatrixUniform = gl.getUniformLocation(shaders.globe, "uMVMatrix");
+        shaders.globe.normalMatrixUniform = gl.getUniformLocation(shaders.globe, "uNormalMatrix");
+
+        // Atmosphere shader
+        shaders.atmosphere = loadShader("shader-atmosphere-vs", "shader-atmosphere-fs");
+
+        shaders.atmosphere.colorAttribute = gl.getAttribLocation(shaders.atmosphere, "aColor");
+        shaders.atmosphere.vertexPositionAttribute = gl.getAttribLocation(shaders.atmosphere, "aVertexPosition");
+
+        shaders.atmosphere.pMatrixUniform = gl.getUniformLocation(shaders.atmosphere, "uPMatrix");
+        shaders.atmosphere.mvMatrixUniform = gl.getUniformLocation(shaders.atmosphere, "uMVMatrix");
+    }
+
+
+    var mvMatrix = mat4.create();
+    var pMatrix = mat4.create();
+    var uNormalMatrix = mat3.create();
+
+    function setMatrixUniforms() {
+
+      mat4.perspective(pMatrix, 45, gl.viewportWidth/gl.viewportHeight, 1, 1024);
+      mat4.identity(mvMatrix);
+      mat4.translate(mvMatrix, mvMatrix, [0, 0, -8]);
+
+      gl.useProgram(shaders.atmosphere);
+      gl.uniformMatrix4fv(shaders.atmosphere.pMatrixUniform, false, pMatrix);
+      gl.uniformMatrix4fv(shaders.atmosphere.mvMatrixUniform, false, mvMatrix);
+
+      mat4.rotate(mvMatrix, mvMatrix, 5 * deg_to_rad, [1, 0, 0]);
+      mat4.rotate(mvMatrix, mvMatrix, 10 * deg_to_rad, [0, 0, 1]);
+      mat4.rotate(mvMatrix, mvMatrix, earth.rotation, [0, 1, 0]);
+
+      mat3.fromMat4(uNormalMatrix, mvMatrix);
+      mat3.invert(uNormalMatrix, uNormalMatrix);
+      mat3.transpose(uNormalMatrix, uNormalMatrix);
+
+      gl.useProgram(shaders.globe);
+      gl.uniformMatrix4fv(shaders.globe.pMatrixUniform, false, pMatrix);
+      gl.uniformMatrix4fv(shaders.globe.mvMatrixUniform, false, mvMatrix);
+      gl.uniformMatrix3fv(shaders.globe.normalMatrixUniform, false, uNormalMatrix);
+    }
+
+    function webGLStart() {
+        canvas = document.getElementById("webGLcanvas");
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        initGL(canvas);
+        initScene();
+
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+
+        startTime = window.webkitAnimationStartTime || window.mozAnimationStartTime || new Date().getTime();
+        lastTimeStamp = startTime;
+        lastFpsTimeStamp = startTime;
+
+        firstRenderInterval = setInterval(render, 150);
+    }
+
+    function drawBackground() {
+      gl.depthMask(false);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, textures.background);
+      gl.useProgram(shaders.base);
+      mat4.ortho(pMatrix, 0, 1, 1, 0, -1, 1);
+      mat4.identity(mvMatrix);
+      gl.useProgram(shaders.base);
+      gl.uniformMatrix4fv(shaders.base.pMatrixUniform, false, pMatrix);
+      gl.uniformMatrix4fv(shaders.base.mvMatrixUniform, false, mvMatrix);
+      gl.enableVertexAttribArray(shaders.base.vertexPositionAttribute);
+      gl.enableVertexAttribArray(shaders.base.texcoordAttribute);
+      vbos.background.render(gl.TRIANGLES);
+      gl.depthMask(true);
+    }
+
+    function drawScene() {
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        drawBackground();
+        setMatrixUniforms();
+        earth.render(timeFactor);
+    }
+
+    function render() {
+      clearInterval(firstRenderInterval);
+
+      time = window.webkitAnimationStartTime ||
+             window.mozAnimationStartTime ||
+             new Date().getTime();
+
+      if(time - lastFpsTimeStamp >= 1000) {
+           framesPerSecond = frameCount;
+           frameCount = 0;
+           lastFpsTimeStamp = time;
+           hudScope.$apply('fps = "' + framesPerSecond + ' fps"');
+      }
+
+      requestAnimationFrame(render);
+      drawScene();
+
+      timeFactor = (time - lastTimeStamp) * 2;
+
+      ++frameCount;
+      lastTimeStamp = time;
+
+      earth.update(timeFactor);
+
+    }
+
+    angular.module("hud", []).
+    controller("hudController", function($scope){
+      $scope.fps = "0 fps";
+    });
+    angular.bootstrap(document.getElementById("hud"), ["hud"]);
+    hudScope = angular.element(document.getElementById("hud")).scope();
+
+    webGLStart();
+
+    window.addEventListener('resize', resizeCanvas, false);
+
+  </script>
+
+</body>
+</html>
