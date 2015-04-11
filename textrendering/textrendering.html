@@ -1,0 +1,302 @@
+<html>
+
+<head>
+  <title>WebGL text rendering demo</title>
+  <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+  <script>
+  /*
+  @licstart  The following is the entire license notice for the
+  JavaScript and html code in this page.
+
+  Copyright (C) 2015 by Sascha Willems (www.saschawillems.de)
+
+  Source can be found at https://github.com/SaschaWillems
+
+  The JavaScript code in this page is free software: you can
+  redistribute it and/or modify it under the terms of the GNU
+  General Public License (GNU GPL) as published by the Free Software
+  Foundation, either version 3 of the License, or (at your option)
+  any later version.  The code is distributed WITHOUT ANY WARRANTY;
+  without even the implied warranty of MERCHANTABILITY or FITNESS
+  FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+  @licend  The above is the entire license notice
+  for the JavaScript code in this page.
+  */
+  </script>
+</head>
+
+<body>
+
+  <canvas id="rttCanvas" style="display:none" width="1024" height="1024"></canvas>
+
+  <canvas id="webGLcanvas" style='position: absolute; left: 0px; top: 0px;' ></canvas>
+  <div id="hud" ng-controller="hudController">
+    <div id="fps" style='position: absolute; left: 5px; top: 5px;'><font color="white">{{ fps }}</font></div>
+  </div>
+
+  <script type="text/javascript" src="external/gl-Matrix-min.js"></script>
+  <script type="text/javascript" src="external/angular.min.js"></script>
+  <script type="text/javascript" src="vertexBufferObject.js"></script>
+
+  <script id="shader-vs" type="x-shader/x-vertex">
+    attribute vec3 aVertexPosition;
+    attribute vec3 aTextureCoord;
+
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+
+    varying vec3 vTextureCoord;
+
+    void main(void) {
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+        vTextureCoord = aTextureCoord;
+    }
+  </script>
+
+  <script id="shader-fs" type="x-shader/x-fragment">
+      precision mediump float;
+
+      uniform sampler2D sTexture;
+      varying vec3 vTextureCoord;
+
+      void main(void) {
+          gl_FragColor = texture2D(sTexture, vTextureCoord.st);
+      }
+  </script>
+
+  <script type="text/javascript">
+
+    var gl;
+    var canvas;
+    var rttContext;
+    var texture;
+    var aspectRatio = 1;
+
+    var firstRenderInterval;
+    var startTime;
+    var lastTimeStamp;
+    var lastFpsTimeStamp;
+    var framesPerSecond = 0;
+    var frameCount = 0;
+    var rad = 0;
+
+    var hudScope;
+
+    var vbo = null;
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      if (gl !== null) {
+        gl.viewportWidth = canvas.width;
+        gl.viewportHeight = canvas.height;
+      }
+      aspectRatio = canvas.width / canvas.height;
+    }
+
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("experimental-webgl");
+            gl.viewportWidth = canvas.width;
+            gl.viewportHeight = canvas.height;
+            aspectRatio = canvas.width / canvas.height;
+            var rttCanvas = document.getElementById('rttCanvas');
+            rttContext = rttCanvas.getContext('2d');
+        } catch (e) {
+        }
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    }
+
+    function updateTexture(text) {
+
+      rttContext.rect(0, 0, rttCanvas.width, rttCanvas.height);
+      rttContext.fillStyle = 'black';
+      rttContext.fill();
+
+      rttContext.fillStyle = "black";
+      rttContext.lineWidth = 1;
+      rttContext.strokeStyle = "#6B0000";
+      rttContext.save();
+      rttContext.shadowColor = "#8B8B8B";
+      rttContext.shadowOffsetX = 0;
+      rttContext.shadowOffsetY = 0;
+      rttContext.shadowBlur = 25;
+      rttContext.font = "bold 96pt Calibri";
+      rttContext.textAlign = "center";
+      rttContext.textBaseline = "middle";
+      var leftOffset = rttContext.canvas.width / 2;
+      var topOffset = rttContext.canvas.height / 2;
+      rttContext.fillText("Some text", leftOffset, topOffset);
+      rttContext.font = "bold 32pt Calibri";
+      rttContext.shadowColor = "#8B0000";
+      rttContext.fillText("A text by Sascha Willems", leftOffset, topOffset + 100);
+      rttContext.restore();
+
+      handleTextureLoaded(rttCanvas, texture);
+    }
+
+    function handleTextureLoaded(image, texture) {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+
+    function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+
+        var str = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                str += k.textContent;
+            }
+            k = k.nextSibling;
+        }
+
+        var shader;
+        if (shaderScript.type == "x-shader/x-fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (shaderScript.type == "x-shader/x-vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+            return null;
+        }
+
+        gl.shaderSource(shader, str);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+
+        return shader;
+    }
+
+
+    var shaderProgram;
+    var shaderProgramPointSprite;
+
+    function initShaders() {
+        var fragmentShader = getShader(gl, "shader-fs");
+        var vertexShader = getShader(gl, "shader-vs");
+
+        shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+
+        gl.useProgram(shaderProgram);
+
+        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+        shaderProgram.vertexTextureCoordAttribute = gl.getAttribLocation(shaderProgram, "aTextureCoord");
+        gl.enableVertexAttribArray(shaderProgram.vertexTextureCoordAttribute);
+
+        shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+        shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+    }
+
+
+    var mvMatrix = mat4.create();
+    var pMatrix = mat4.create();
+
+    function setMatrixUniforms() {
+        gl.useProgram(shaderProgram);
+        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+        gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+    }
+
+    function webGLStart() {
+        canvas = document.getElementById("webGLcanvas");
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        initGL(canvas);
+        initShaders();
+        texture = gl.createTexture();
+        updateTexture();
+
+        vbo = new vertexBufferObject();
+        vbo.setVertices([0,0,0, 0,1,0, 1,0,0, 0,1,0, 1,1,0, 1,0,0], shaderProgram.vertexPositionAttribute);
+        vbo.setTextureCoordinates([0,0, 0,1, 1,0, 0,1, 1,1, 1,0], shaderProgram.vertexTextureCoordAttribute, 2);
+
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+
+        startTime = window.webkitAnimationStartTime ||  window.mozAnimationStartTime ||  new Date().getTime();
+        lastTimeStamp = startTime;
+        lastFpsTimeStamp = startTime;
+
+        firstRenderInterval = setInterval(render, 150);
+    }
+
+    function drawScene() {
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        mat4.ortho(pMatrix, -0.5, 0.5, 0.5, -0.5, -1, 1);
+        mat4.identity(mvMatrix);
+        mat4.translate(mvMatrix, mvMatrix, [Math.sin(rad)*0.05-0.5, Math.cos(rad)*0.05-0.5, 0]);
+
+        setMatrixUniforms();
+
+        gl.useProgram(shaderProgram);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        vbo.render(gl.TRIANGLES);
+
+        gl.useProgram(shaderProgram);
+    }
+
+    function render() {
+      clearInterval(firstRenderInterval);
+
+      time = window.webkitAnimationStartTime || window.mozAnimationStartTime || new Date().getTime();
+
+      if(time - lastFpsTimeStamp >= 1000) {
+           framesPerSecond = frameCount;
+           frameCount = 0;
+           lastFpsTimeStamp = time;
+           hudScope.$apply('fps = "' + framesPerSecond + ' fps"');
+       }
+
+      requestAnimationFrame(render);
+      drawScene();
+
+      ++frameCount;
+
+      rad += (time - lastTimeStamp) * 0.0025;
+      if (rad > 2*Math.PI) {
+        rad -= 2*Math.PI;
+      }
+
+      lastTimeStamp = time;
+    }
+
+    angular.module("hud", []).
+    controller("hudController", function($scope){
+      $scope.fps = "0 fps";
+    });
+    angular.bootstrap(document.getElementById("hud"), ["hud"]);
+    hudScope = angular.element(document.getElementById("hud")).scope();
+
+    webGLStart();
+
+    window.addEventListener('resize', resizeCanvas, false);
+
+  </script>
+
+</body>
+
+</html>
