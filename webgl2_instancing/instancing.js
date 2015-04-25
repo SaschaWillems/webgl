@@ -130,9 +130,6 @@ function generateInstancingBuffers(dimensionCount, offset) {
     }
   }
 
-  console.log("instanceCount = " + instanceCount);
-  console.log("tris = " + (instanceCount * buffers.vertices.numItems / 3));
-
   // Setup instacing buffers for position offsets and color
   buffers.instancingOffsets = generateArrayBuffer(new Float32Array(offsets), gl.STATIC_DRAW, 3)
   buffers.instancingColors = generateArrayBuffer(new Float32Array(colors), gl.STATIC_DRAW, 4)
