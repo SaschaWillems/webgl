@@ -1,0 +1,280 @@
+<html>
+
+<head>
+  <title>WebGL 2 Instancing</title>
+  <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+  <script>
+  /*
+  @licstart  The following is the entire license notice for the
+  JavaScript and html code in this page.
+
+  Copyright (C) 2015 by Sascha Willems (www.saschawillems.de)
+
+  Source can be found at https://github.com/SaschaWillems
+
+  The JavaScript code in this page is free software: you can
+  redistribute it and/or modify it under the terms of the GNU
+  General Public License (GNU GPL) as published by the Free Software
+  Foundation, either version 3 of the License, or (at your option)
+  any later version.  The code is distributed WITHOUT ANY WARRANTY;
+  without even the implied warranty of MERCHANTABILITY or FITNESS
+  FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+  @licend  The above is the entire license notice
+  for the JavaScript code in this page.
+  */
+  </script>
+</head>
+
+<body>
+
+  <canvas id="rendercanvas" style='position: absolute; left: 0px; top: 0px;' ></canvas>
+  <div id="hud" ng-controller="hudController">
+    <div id="fps" style='position: absolute; left: 5px; top: 5px;'><font color="white">{{ fps }}</font></div>
+  </div>
+
+  <script type="text/javascript" src="external/gl-Matrix-min.js"></script>
+  <script type="text/javascript" src="external/angular.min.js"></script>
+  <script type="text/javascript" src="webglutils.js"></script>
+  <script type="text/javascript" src="instancing.js"></script>
+
+  <!-- Globe shaders -->
+  <script id="shader-globe-fs" type="x-shader/x-fragment">
+    // Based on a render monkey (ATI, no longer available) shader and tweaked for Projekt "W"
+    precision mediump float;
+
+    uniform sampler2D uColorMapDay, uColorMapNight;
+
+    varying float vDiffuse;
+    varying vec3 vSpecular;
+    varying vec2 vTexCoord;
+    varying vec4 vColor;
+
+    const float Terminator = 0.3;
+    const float InvTerminator = 1.0 / (2.0 * Terminator);
+
+    void main (void)
+    {
+        float gloss  = 1.0-texture2D(uColorMapNight, vec2(vTexCoord.s, vTexCoord.t)).g;
+        vec3 daytime = texture2D(uColorMapDay, vTexCoord).rgb * vDiffuse + vSpecular * gloss;
+        vec3 nighttime = texture2D(uColorMapNight, vTexCoord).rgb;
+        vec3 color = daytime;
+        if (vDiffuse < -Terminator) {
+            color = nighttime;
+        }
+        if (abs(vDiffuse) < Terminator ) {
+            color = mix(nighttime, daytime, (vDiffuse + Terminator) * InvTerminator);
+        }
+        gl_FragColor = vec4(color * vColor.rgb, 1.0);
+    }
+  </script>
+
+  <script id="shader-globe-vs" type="x-shader/x-vertex">
+    attribute vec4 aVertexPosition;
+    attribute vec3 aNormal;
+    attribute vec2 aTextureCoord;
+    attribute vec3 aInstancedOffset;
+    attribute vec4 aInstancedColor;
+
+    uniform float cos_time_0_2PI;
+    uniform float sin_time_0_2PI;
+    uniform mat4 uPMatrix;
+    uniform mat4 uMVMatrix;
+    uniform mat3 uNormalMatrix;
+    uniform float season;
+
+    varying float vDiffuse;
+    varying vec3 vSpecular;
+    varying vec2 vTexCoord;
+    varying vec4 vColor;
+
+    void main(void)
+    {
+        vec4 vertexPos = aVertexPosition;
+        vertexPos.xyz += aInstancedOffset;
+        vec4 ecPosition = uMVMatrix * vertexPos;
+        vec3 normal = normalize(uNormalMatrix * aNormal);
+        vec3 lightVec = normalize(uNormalMatrix * vec3(cos_time_0_2PI, season, sin_time_0_2PI));
+        vec3 reflectVec = reflect(-lightVec, normal);
+        vec3 viewVec = normalize(vec3 (-ecPosition));
+
+        float specIntensity = pow(max(dot(reflectVec, viewVec), 0.0), 8.0);
+        vSpecular = (specIntensity * 0.3) * vec3 (1.0, 0.941, 0.898);
+        vDiffuse = dot(lightVec, normal);
+
+        vColor = aInstancedColor;
+
+        vTexCoord = aTextureCoord;
+        gl_Position = uPMatrix * uMVMatrix * vertexPos;
+    }
+  </script>
+
+  <script type="text/javascript">
+
+    var gl;
+    var canvas;
+
+    var firstRenderInterval;
+    var startTime;
+    var lastTimeStamp;
+    var lastFpsTimeStamp;
+    var framesPerSecond = 0;
+    var frameCount = 0;
+    var timeFactor = 0;
+
+    var hudScope;
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      if (gl !== null) {
+        gl.viewportWidth = canvas.width;
+        gl.viewportHeight = canvas.height;
+      }
+    }
+
+    function loadTextures() {
+      textures.colorMapDay = loadTexture("./data/textures/plutomap1k.jpg");
+      textures.colorMapNight = loadTexture("./data/textures/plutonight1k.jpg");
+    }
+
+    function setMatrixUniforms() {
+
+      mat4.perspective(pMatrix, (90 + (Math.sin(shaderDegreeTimer * rad_to_deg * 0.015)) * 15) * deg_to_rad, gl.viewportWidth/gl.viewportHeight, 1, 1024);
+      mat4.identity(mvMatrix);
+      mat4.rotate(mvMatrix, mvMatrix, rotation, [0, 0, 1]);
+      mat4.translate(mvMatrix, mvMatrix, [0, 0, -3]);
+
+      mat3.fromMat4(uNormalMatrix, mvMatrix);
+      mat3.invert(uNormalMatrix, uNormalMatrix);
+      mat3.transpose(uNormalMatrix, uNormalMatrix);
+
+      gl.useProgram(shaders.planet);
+      gl.uniformMatrix4fv(shaders.planet.pMatrixUniform, false, pMatrix);
+      gl.uniformMatrix4fv(shaders.planet.mvMatrixUniform, false, mvMatrix);
+      gl.uniformMatrix3fv(shaders.planet.normalMatrixUniform, false, uNormalMatrix);
+    }
+
+    function webGLStart() {
+        canvas = document.getElementById("rendercanvas");
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        gl = getWebGLContext(canvas, "webgl2");
+
+        initScene();
+
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthFunc(gl.LEQUAL);
+
+        startTime = window.webkitAnimationStartTime || window.mozAnimationStartTime || new Date().getTime();
+        lastTimeStamp = startTime;
+        lastFpsTimeStamp = startTime;
+
+        firstRenderInterval = setInterval(render, 150);
+    }
+
+    function initScene() {
+      loadShaders();
+
+      generateSphere(0.35, 32);
+      generateInstancingBuffers(20, 1);
+
+      loadTextures();
+
+      gl.uniform1i(gl.getUniformLocation(shaders.planet, "uColorMapDay"), 0);
+      gl.uniform1i(gl.getUniformLocation(shaders.planet, "uColorMapNight"), 1);
+    }
+
+
+    function renderScene() {
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        setMatrixUniforms();
+
+        // Bind day and night planet color map
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, textures.colorMapDay);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, textures.colorMapNight);
+
+        gl.useProgram(shaders.planet);
+
+        gl.uniform1f(gl.getUniformLocation(shaders.planet, "cos_time_0_2PI"), Math.sin(shaderDegreeTimer));
+        gl.uniform1f(gl.getUniformLocation(shaders.planet, "sin_time_0_2PI"), Math.cos(shaderDegreeTimer));
+        gl.uniform1f(gl.getUniformLocation(shaders.planet, "season"), 0.5);
+
+        gl.enableVertexAttribArray(shaders.planet.vertexPositionAttribute);
+        gl.enableVertexAttribArray(shaders.planet.normalAttribute);
+        gl.enableVertexAttribArray(shaders.planet.texcoordAttribute);
+        gl.enableVertexAttribArray(shaders.planet.colorLocation);
+        gl.enableVertexAttribArray(shaders.planet.offsetLocation);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.textureCoords);
+        gl.vertexAttribPointer(shaders.planet.texcoordAttribute, buffers.textureCoords.itemSize, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normals);
+        gl.vertexAttribPointer(shaders.planet.normalAttribute, buffers.normals.itemSize, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertices);
+        gl.vertexAttribPointer(shaders.planet.vertexPositionAttribute, buffers.vertices.itemSize, gl.FLOAT, false, 0, 0);
+
+        // Instanced position data
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.instancingOffsets);
+        gl.vertexAttribPointer(shaders.planet.offsetLocation, 3, gl.FLOAT, false, 12, 0);
+        // gl.vertexAttribDivisor sets the vertex attribute increment per instance
+        gl.vertexAttribDivisor(shaders.planet.offsetLocation, 1);
+
+        // Instanced color data
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.instancingColors);
+        gl.vertexAttribPointer(shaders.planet.colorLocation, 4, gl.FLOAT, false, 16, 0);
+        gl.vertexAttribDivisor(shaders.planet.colorLocation, 1);
+
+        // Render our planet mesh instanceCount times with one single command
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, buffers.vertices.numItems, instanceCount);
+    }
+
+    function render() {
+      clearInterval(firstRenderInterval);
+
+      time = window.webkitAnimationStartTime || window.mozAnimationStartTime || new Date().getTime();
+
+      if(time - lastFpsTimeStamp >= 1000) {
+           framesPerSecond = frameCount;
+           frameCount = 0;
+           lastFpsTimeStamp = time;
+           hudScope.$apply('fps = "' + framesPerSecond + ' fps"');
+      }
+
+      requestAnimationFrame(render);
+      renderScene();
+
+      timeFactor = (time - lastTimeStamp) * 0.1;
+
+      ++frameCount;
+      lastTimeStamp = time;
+
+      shaderDegreeTimer -= timeFactor * 0.005;
+      if (shaderDegreeTimer > 360) {
+        shaderDegreeTimer -= 360;
+      }
+
+      rotation += timeFactor * 0.0005;
+      if (rotation > 360) {
+        rotation -= 360;
+      }
+    }
+
+    angular.module("hud", []).
+    controller("hudController", function($scope){
+      $scope.fps = "0 fps";
+    });
+    angular.bootstrap(document.getElementById("hud"), ["hud"]);
+    hudScope = angular.element(document.getElementById("hud")).scope();
+
+    webGLStart();
+
+    window.addEventListener('resize', resizeCanvas, false);
+
+  </script>
+
+</body>
+</html>
