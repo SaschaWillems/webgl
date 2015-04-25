@@ -1,0 +1,224 @@
+<html>
+<head>
+  <title>WebGL 2.0 Implementation Capability Viewer - 2015 by Sascha Willems</title>
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap-theme.min.css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+</head>
+
+<body>
+  <canvas id="webGLcanvas" style='position: absolute; left: 0px; top: 0px;' ></canvas>
+  <div style="margin:20px;">
+  <script type="text/javascript">
+
+  function getQueryString(name, defaultValue) {
+    var query = window.location.search.substring(1);
+    var vars = query.split("&");
+    for (var i = 0; i < vars.length; i++) {
+      var pair = vars[i].split("=");
+      if (pair[0] == name) {
+        return unescape(pair[1]);
+      }
+    }
+    return defaultValue;
+  }
+
+  function getQueryValue(name, defaultValue) {
+    var value = getQueryString(name, null);
+    if (value == null) {
+      return defaultValue;
+    }
+    return parseInt(value, 10);
+  }
+
+    var canvas = document.getElementById("webGLcanvas");
+    canvas.width = 1;
+    canvas.height = 1;
+
+    function getCapability(capability) {
+      var params = gl.getParameter(capability);
+      var res = "";
+      if (params.constructor === Int32Array) {
+        for (var i = 0; i < params.length; i++) {
+            res += params[i] + " ";
+        }
+      } else {
+        res = params;
+      }
+      return res;
+    }
+
+    var tryGL2 = getQueryValue('webgl2', 1);
+    console.log(tryGL2);
+
+    try {
+      gl = canvas.getContext( 'webgl2', { antialias: true } );
+      if (!gl) {
+        gl = canvas.getContext( 'experiemental-webgl2', { antialias: true } );
+      }
+      gl.viewportWidth = canvas.width;
+      gl.viewportHeight = canvas.height;
+    } catch (e) {
+    }
+    if (!gl) {
+        alert("Could not initialise WebGL, sorry :-(");
+    }
+
+    // WebGL
+
+    // Implemenation
+    document.write("<table class='table table-striped table-bordered table-hover table-condensed'>")
+    document.write("<thead><tr class='success'><th colspan=2>Implementation details</th></tr></thead>");
+    document.write("<tr><td>Vendor</td><td>" + gl.getParameter(gl.VENDOR) + "</td></tr>");
+    document.write("<tr><td>Version</td><td>" + gl.getParameter(gl.VERSION) + "</td></tr>");
+    document.write("<tr><td>Renderer</td><td>" + getCapability(gl.RENDERER) + "</td></tr>");
+    document.write("<tr><td>Sahding language version</td><td>" + getCapability(gl.SHADING_LANGUAGE_VERSION) + "</td></tr>");
+
+    var ext = gl.getExtension('WEBGL_debug_renderer_info');
+    if (ext != null) {
+      document.write("<tr><td>Unmasked vendor</td><td>" + getCapability(ext.UNMASKED_VENDOR_WEBGL) + "</td></tr>");
+      document.write("<tr><td>Unmasked renderer</td><td>" + getCapability(ext.UNMASKED_RENDERER_WEBGL) + "</td></tr>");
+    }
+
+    document.write("</table>");
+
+    // Caps
+    var caps = [
+      gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS,
+      gl.MAX_CUBE_MAP_TEXTURE_SIZE,
+      gl.MAX_FRAGMENT_UNIFORM_VECTORS,
+      gl.MAX_RENDERBUFFER_SIZE,
+      gl.MAX_TEXTURE_IMAGE_UNITS,
+      gl.MAX_TEXTURE_SIZE,
+      gl.MAX_VARYING_VECTORS,
+      gl.MAX_VERTEX_ATTRIBS,
+      gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS,
+      gl.MAX_VERTEX_UNIFORM_VECTORS,
+      gl.MAX_VIEWPORT_DIMS,
+      gl.MAX_COMBINED_UNIFORM_BLOCKS
+      ];
+
+    var capsNames = [
+      "MAX_COMBINED_TEXTURE_IMAGE_UNITS",
+      "MAX_CUBE_MAP_TEXTURE_SIZE",
+      "MAX_FRAGMENT_UNIFORM_VECTORS",
+      "MAX_RENDERBUFFER_SIZE",
+      "MAX_TEXTURE_IMAGE_UNITS",
+      "MAX_TEXTURE_SIZE",
+      "MAX_VARYING_VECTORS",
+      "MAX_VERTEX_ATTRIBS",
+      "MAX_VERTEX_TEXTURE_IMAGE_UNITS",
+      "MAX_VERTEX_UNIFORM_VECTORS",
+      "MAX_VIEWPORT_DIMS",
+      "MAX_COMBINED_UNIFORM_BLOCKS"
+    ];
+
+    document.write("<table class='table table-striped table-bordered table-hover'>")
+    document.write("<thead><tr class='success'><th colspan=2>WebGL 1.0 Capabilities (" + caps.length + ")</th></tr></thead>");
+    for (var i = 0; i < caps.length; i++) {
+      document.write("<tr><td>" + capsNames[i] + "</td><td>" + getCapability(caps[i]) + "</td></tr>");
+    }
+
+    // WebGL 2.0 Caps
+    caps = [
+      gl.MAX_3D_TEXTURE_SIZE,
+      gl.MAX_ARRAY_TEXTURE_LAYERS,
+      gl.MAX_CLIENT_WAIT_TIMEOUT_WEBGL,
+      gl.MAX_COLOR_ATTACHMENTS,
+      gl.MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS,
+      gl.MAX_COMBINED_UNIFORM_BLOCKS,
+      gl.MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS,
+      gl.MAX_DRAW_BUFFERS,
+      gl.MAX_ELEMENT_INDEX,
+      gl.MAX_ELEMENTS_INDICES,
+      gl.MAX_ELEMENTS_VERTICES,
+      gl.MAX_FRAGMENT_INPUT_COMPONENTS,
+      gl.MAX_FRAGMENT_UNIFORM_BLOCKS,
+      gl.MAX_FRAGMENT_UNIFORM_COMPONENTS,
+      gl.MAX_PROGRAM_TEXEL_OFFSET,
+      gl.MAX_SAMPLES,
+      gl.MAX_SERVER_WAIT_TIMEOUT,
+      gl.MAX_TEXTURE_LOD_BIAS,
+      gl.MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS,
+      gl.MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS,
+      gl.MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS,
+      gl.MAX_UNIFORM_BLOCK_SIZE,
+      gl.MAX_UNIFORM_BUFFER_BINDINGS,
+      gl.MAX_VARYING_COMPONENTS,
+      gl.MAX_VERTEX_OUTPUT_COMPONENTS,
+      gl.MAX_VERTEX_UNIFORM_BLOCKS,
+      gl.MAX_VERTEX_UNIFORM_COMPONENTS,
+      gl.MIN_PROGRAM_TEXEL_OFFSET
+    ];
+
+    capsNames = [
+      "MAX_3D_TEXTURE_SIZE",
+      "MAX_ARRAY_TEXTURE_LAYERS",
+      "MAX_CLIENT_WAIT_TIMEOUT_WEBGL",
+      "MAX_COLOR_ATTACHMENTS",
+      "MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS",
+      "MAX_COMBINED_UNIFORM_BLOCKS",
+      "MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS",
+      "MAX_DRAW_BUFFERS",
+      "MAX_ELEMENT_INDEX",
+      "MAX_ELEMENTS_INDICES",
+      "MAX_ELEMENTS_VERTICES",
+      "MAX_FRAGMENT_INPUT_COMPONENTS",
+      "MAX_FRAGMENT_UNIFORM_BLOCKS",
+      "MAX_FRAGMENT_UNIFORM_COMPONENTS",
+      "MAX_PROGRAM_TEXEL_OFFSET",
+      "MAX_SAMPLES",
+      "MAX_SERVER_WAIT_TIMEOUT",
+      "MAX_TEXTURE_LOD_BIAS",
+      "MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS",
+      "MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS",
+      "MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS",
+      "MAX_UNIFORM_BLOCK_SIZE",
+      "MAX_UNIFORM_BUFFER_BINDINGS",
+      "MAX_VARYING_COMPONENTS",
+      "MAX_VERTEX_OUTPUT_COMPONENTS",
+      "MAX_VERTEX_UNIFORM_BLOCKS",
+      "MAX_VERTEX_UNIFORM_COMPONENTS",
+      "MIN_PROGRAM_TEXEL_OFFSET"
+
+    ];
+
+    gl.getError();
+
+    document.write("<thead><tr class='success'><th colspan=2>WebGL 2.0 Capabilities (" + caps.length + ")</th></tr></thead>");
+    for (var i = 0; i < caps.length; i++) {
+      var hasError = (gl.getError() != gl.NO_ERROR);
+      document.write(hasError ? "<tr class='danger'>" : "<tr>");
+      document.write("<td>" + capsNames[i] + "</td>");
+      if (hasError) {
+        document.write("<td>Error</td></tr>");
+      } else {
+        document.write("<td>" + getCapability(caps[i]) + "</td></tr>");
+      }
+    }
+    document.write("</table>");
+
+    // Extensions
+    var extensions = gl.getSupportedExtensions();
+    document.write("<table class='table table-striped table-bordered table-hover'>")
+    document.write("<thead><tr class='success'><th>Supported extensions (" + extensions.length + ")</th></tr></thead>");
+    for (var i = 0; i < extensions.length; i++) {
+      document.write("<tr><td>"+extensions[i]+"</td></tr>");
+    }
+    document.write("</table>");
+
+    // Compressed texture formats
+    var extCompressed = gl.getExtension("WEBGL_compressed_texture_s3tc") || gl.getExtension("WEBKIT_WEBGL_compressed_texture_s3tc");
+    var compressedFormats = gl.getParameter(gl.COMPRESSED_TEXTURE_FORMATS);
+    document.write("<table class='table table-striped table-bordered table-hover'>")
+    document.write("<thead><tr class='success'><th>Compressed texture formats (" + compressedFormats.length + ")</th></tr></thead>");
+    for (var i = 0; i < compressedFormats.length; i++) {
+      document.write("<tr><td>"+compressedFormats[i]+"</td></tr>");
+    }
+    document.write("</table>");
+
+
+  </script>
+  </div>
+</body>
