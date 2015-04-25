@@ -159,7 +159,7 @@
         canvas = document.getElementById("rendercanvas");
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
-        gl = getWebGLContext(canvas, "webgl2");
+        gl = getWebGLContext(canvas, "webgl2", true);
 
         initScene();
 

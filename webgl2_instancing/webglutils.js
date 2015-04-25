@@ -24,12 +24,12 @@
 const deg_to_rad = Math.PI / 180.0;
 const rad_to_deg = 1/(Math.PI / 180.0);
 
-function getWebGLContext(canvas, target) {
+function getWebGLContext(canvas, target, antialiasing) {
   var gl = null;
   try {
-    gl = canvas.getContext(target, { antialias: false });
+    gl = canvas.getContext(target, { antialias: antialiasing });
     if (!gl) {
-      gl = canvas.getContext("experiemental-" + target, { antialias: false });
+      gl = canvas.getContext("experiemental-" + target, { antialias: antialiasing });
     }
     gl.viewportWidth = canvas.width;
     gl.viewportHeight = canvas.height;
