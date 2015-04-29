@@ -21,12 +21,10 @@
 *
 */
 
-function Earth(shader, shaderAtmosphere)  {
+function Earth(shader)  {
 
   this.shader = shader;
-  this.shaderAtmosphere = shaderAtmosphere;
   this.vboGlobe = null;
-  this.vboAtmosphere = null;
   this.colorMapDay = null;
   this.colorMapNight = null;
   this.cloudMap = null;
@@ -94,53 +92,8 @@ function Earth(shader, shaderAtmosphere)  {
     this.vboGlobe.setTextureCoordinates(texcoords, this.shader.texcoordAttribute, 2);
   }
 
-  // Create a ring using triangles that stretches outside the globe
-  // and inside to "simulate" the blue haze of earth's atmosphere
-  this.generateAtmosphere = function(scale, detail) {
-    var vertices = [];
-    var normals = [];
-    var texcoords = [];
-    var colors = [];
-
-    // Generate atmosphere
-    vertices.length = 0;
-    texcoords.length = 0;
-    normals.length = 0;
-
-    var pA = detail;
-    var s = scale;
-    var sI = 12; // Relative scale for center of the ring
-    var sO = 10; // Relative outer ring scale
-    var sE = 13; // Relative inner ring scale
-
-    for (var i = 0; i < pA; ++i) {
-      //Outer
-      colors.push(0, 0, 0.5, 0.0);        vertices.push((Math.sin(i*360/pA*PI/180)*rad_to_deg)/sO*s, (Math.cos(i*360/pA*PI/180)*rad_to_deg)/sO*s, 0);
-      colors.push(0.46, 0.74, 0.99, 0.5); vertices.push((Math.sin(i*360/pA*PI/180)*rad_to_deg)/sI*s, (Math.cos(i*360/pA*PI/180)*rad_to_deg)/sI*s, 0);
-      colors.push(0, 0, 0.5, 0.0);        vertices.push((Math.sin((i+1)*360/pA*PI/180)*rad_to_deg)/sO*s, (Math.cos((i+1)*360/pA*PI/180)*rad_to_deg)/sO*s, 0);
-
-      colors.push(0.46, 0.74, 0.99, 0.5); vertices.push((Math.sin(i*360/pA*PI/180)*rad_to_deg)/sI*s, (Math.cos(i*360/pA*PI/180)*rad_to_deg)/sI*s, 0);
-      colors.push(0.0, 0, 0.5, 0.0);      vertices.push((Math.sin((i+1)*360/pA*PI/180)*rad_to_deg)/sO*s, (Math.cos((i+1)*360/pA*PI/180)*rad_to_deg)/sO*s, 0);
-      colors.push(0.46, 0.74, 0.99, 0.5); vertices.push((Math.sin((i+1)*360/pA*PI/180)*rad_to_deg)/sI*s, (Math.cos((i+1)*360/pA*PI/180)*rad_to_deg)/sI*s, 0);
-
-      // Inner
-      colors.push(0, 0, 0.5, 0.0);        vertices.push((Math.sin(i*360/pA*PI/180)*rad_to_deg)/sE*s, (Math.cos(i*360/pA*PI/180)*rad_to_deg)/sE*s, 0);
-      colors.push(0.46, 0.74, 0.99, 0.5); vertices.push((Math.sin(i*360/pA*PI/180)*rad_to_deg)/sI*s, (Math.cos(i*360/pA*PI/180)*rad_to_deg)/sI*s, 0);
-      colors.push(0, 0, 0.5, 0.0);        vertices.push((Math.sin((i+1)*360/pA*PI/180)*rad_to_deg)/sE*s, (Math.cos((i+1)*360/pA*PI/180)*rad_to_deg)/sE*s, 0);
-
-      colors.push(0.46, 0.74, 0.99, 0.5); vertices.push((Math.sin(i*360/pA*PI/180)*rad_to_deg)/sI*s, (Math.cos(i*360/pA*PI/180)*rad_to_deg)/sI*s, 0);
-      colors.push(0.0, 0, 0.5, 0.0);      vertices.push((Math.sin((i+1)*360/pA*PI/180)*rad_to_deg)/sE*s, (Math.cos((i+1)*360/pA*PI/180)*rad_to_deg)/sE*s, 0);
-      colors.push(0.46, 0.74, 0.99, 0.5); vertices.push((Math.sin((i+1)*360/pA*PI/180)*rad_to_deg)/sI*s, (Math.cos((i+1)*360/pA*PI/180)*rad_to_deg)/sI*s, 0);
-    }
-
-    this.vboAtmosphere = new vertexBufferObject();
-    this.vboAtmosphere.setVertices(vertices, this.shaderAtmosphere.vertexPositionAttribute);
-    this.vboAtmosphere.setColors(colors, this.shaderAtmosphere.colorAttribute);
-  }
-
   this.generate = function() {
     this.generateGlobe(2, 64);
-    this.generateAtmosphere(0.425, 64);
   }
 
   this.render = function() {
@@ -150,6 +103,7 @@ function Earth(shader, shaderAtmosphere)  {
     gl.bindTexture(gl.TEXTURE_2D, this.colorMapNight);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, this.cloudMap);
+    gl.activeTexture(gl.TEXTURE3);
     gl.useProgram(this.shader);
     gl.uniform1i(gl.getUniformLocation(this.shader, "uColorMapDay"), 0);
     gl.uniform1i(gl.getUniformLocation(this.shader, "uColorMapNight"), 1);
@@ -165,16 +119,6 @@ function Earth(shader, shaderAtmosphere)  {
     gl.disableVertexAttribArray(this.shader.vertexPositionAttribute);
     gl.disableVertexAttribArray(this.shader.normalAttribute);
     gl.disableVertexAttribArray(this.shader.texcoordAttribute);
-
-    gl.depthFunc(gl.ALWAYS);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-    gl.useProgram(this.shaderAtmosphere);
-    gl.enableVertexAttribArray(this.shaderAtmosphere.vertexPositionAttribute);
-    gl.enableVertexAttribArray(this.shaderAtmosphere.colorAttribute);
-    this.vboAtmosphere.render(gl.TRIANGLES);
-    gl.disable(gl.BLEND);
-    gl.depthFunc(gl.LEQUAL);
   }
 
   this.update = function(timeFactor) {
