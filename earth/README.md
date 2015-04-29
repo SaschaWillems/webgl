@@ -1,6 +1,6 @@
 # WebGL Earth
 ## About
-<a href="./screenshots/01.png"><img src="./screenshots/01.png" width="300px"></a> <a href="./screenshots/02.png"><img src="./screenshots/01.png" width="300px"></a>
+<a href="./screenshots/02.png"><img src="./screenshots/02.png" width="300px"></a> <a href="./screenshots/01.png"><img src="./screenshots/01.png" width="300px"></a> 
 
 Based on the globe rendering used in my game Projekt "W" (http://www.saschawillems.de/?page_id=829), this demo renders earth using a day/night shader including an atmosphere (also calculated inside the shader). It also uses offscreen rendering to add atmosphere and night light glow to the scene.
 
