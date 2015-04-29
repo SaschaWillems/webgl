@@ -87,8 +87,8 @@ this.getShaderStrFromFile = function(path, shaderType) {
 
  */
 loadShader = function(vertexShaderFile, fragmentShaderFile) {
-  var vertexShader = this.getShaderStr(vertexShaderFile, gl.VERTEX_SHADER);
-  var fragmentShader = this.getShaderStr(fragmentShaderFile, gl.FRAGMENT_SHADER);
+  var vertexShader = this.getShaderStrFromFile(vertexShaderFile, gl.VERTEX_SHADER);
+  var fragmentShader = this.getShaderStrFromFile(fragmentShaderFile, gl.FRAGMENT_SHADER);
   var shader = gl.createProgram();
   gl.attachShader(shader, vertexShader);
   gl.attachShader(shader, fragmentShader);
