@@ -159,12 +159,12 @@ function ObjLoader() {
   this.setupShader = function(shader) {
     this.shader = shader;
     // Get shader attributes
-    this.shader.vertexPositionAttribute = gl.getAttribLocation(shaders.base, "aVertexPosition");
-    this.shader.normalAttribute = gl.getAttribLocation(shaders.base, "aNormal");
-    this.shader.texcoordAttribute = gl.getAttribLocation(shaders.base, "aTextureCoord");
+    this.shader.vertexPositionAttribute = gl.getAttribLocation(this.shader, "aVertexPosition");
+    this.shader.normalAttribute = gl.getAttribLocation(this.shader, "aNormal");
+    this.shader.texcoordAttribute = gl.getAttribLocation(this.shader, "aTextureCoord");
     // Get shader uniforms
-    this.shader.pMatrixUniform = gl.getUniformLocation(shaders.base, "uPMatrix");
-    this.shader.mvMatrixUniform = gl.getUniformLocation(shaders.base, "uMVMatrix");
+    this.shader.pMatrixUniform = gl.getUniformLocation(this.shader, "uPMatrix");
+    this.shader.mvMatrixUniform = gl.getUniformLocation(this.shader, "uMVMatrix");
     // Assign texture sampler
     gl.useProgram(this.shader);
     gl.uniform1i(gl.getUniformLocation(this.shader, 'sTexture'), 0);
