@@ -1,0 +1,427 @@
+<html>
+
+<head>
+  <title>WebGL Parallax Mapping - 2015 by Sascha Willems (www.saschawillems.de)</title>
+  <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+  <script>
+  /*
+  @licstart  The following is the entire license notice for the
+  JavaScript and html code in this page.
+
+  Copyright (C) 2015 by Sascha Willems (www.saschawillems.de)
+
+  Source can be found at https://github.com/SaschaWillems
+
+  The JavaScript code in this page is free software: you can
+  redistribute it and/or modify it under the terms of the GNU
+  General Public License (GNU GPL) as published by the Free Software
+  Foundation, either version 3 of the License, or (at your option)
+  any later version.  The code is distributed WITHOUT ANY WARRANTY;
+  without even the implied warranty of MERCHANTABILITY or FITNESS
+  FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+  @licend  The above is the entire license notice
+  for the JavaScript code in this page.
+  */
+  </script>
+</head>
+
+<body>
+
+  <canvas id="webGLcanvas" style='position: absolute; left: 0px; top: 0px;' ></canvas>
+  <div id="hud" ng-controller="hudController">
+    <div id="fps" style='position: absolute; left: 5px; top: 5px;'><font color="white">{{ fps }}<br>
+    </font></div>
+  </div>
+
+  <script type="text/javascript" src="external/gl-Matrix-min.js"></script>
+  <script type="text/javascript" src="external/angular.min.js"></script>
+  <script type="text/javascript" src="webglutils.js"></script>
+
+  <script type="text/javascript">
+
+    const PI = Math.PI;
+
+    var gl;
+    var canvas;
+
+    var firstRenderInterval;
+    var startTime;
+    var lastTimeStamp;
+    var lastFpsTimeStamp;
+    var framesPerSecond = 0;
+    var frameCount = 0;
+    var timeFactor = 0;
+    var degTimer = 175;
+
+    var hudScope;
+
+    var mvMatrix = mat4.create();
+    var pMatrix = mat4.create();
+    var uNormalMatrix = mat3.create();
+
+    var rotation = vec3.fromValues(-62.0, -0.5, 0.0);
+    var zoom = -0.8;
+
+    var usePom = 1;
+    var displayNormalMap = 1;
+    var paused = true;
+
+    // Mouse movement and tracking
+    var mouseDown = false;
+    var mouseX = 0;
+    var mouseY = 0;
+
+    function textures() {
+      colorMap = null;
+      normalMap = null;
+      heightMap = null;
+    }
+
+    function shaders() {
+      parallax = null;
+    }
+
+    function buffers() {
+      vertices = null;
+      normals = null;
+      texcoords = null;
+      tangents = null;
+    }
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      if (gl !== null) {
+        gl.viewportWidth = canvas.width;
+        gl.viewportHeight = canvas.height;
+      }
+    }
+
+    function initGL(canvas) {
+      gl = getWebGLContext(canvas, 'webgl', true);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      gl.disable(gl.CULL_FACE);
+    }
+
+    function initScene() {
+      loadShaders();
+      loadTextures();
+      setupBuffers();
+    }
+
+    function loadShaders() {
+      shaders.parallax = loadShader("./data/shaders/parallax.vert", "./data/shaders/parallax.frag");
+
+      shaders.parallax.vertexPositionAttribute = gl.getAttribLocation(shaders.parallax, "aVertexPosition");
+      shaders.parallax.normalAttribute = gl.getAttribLocation(shaders.parallax, "aNormal");
+      shaders.parallax.tangentAttribute = gl.getAttribLocation(shaders.parallax, "aTangent");
+      shaders.parallax.texcoordAttribute = gl.getAttribLocation(shaders.parallax, "aTextureCoord");
+      // Get shader uniforms
+      shaders.parallax.pMatrixUniform = gl.getUniformLocation(shaders.parallax, "uPMatrix");
+      shaders.parallax.mvMatrixUniform = gl.getUniformLocation(shaders.parallax, "uMVMatrix");
+      shaders.parallax.normalMatrixUniform = gl.getUniformLocation(shaders.parallax, "uNormalMatrix");
+      shaders.parallax.cameraPosUniform = gl.getUniformLocation(shaders.parallax, "uCameraPos");
+      // Assign texture samplers to texture units
+      gl.useProgram(shaders.parallax);
+      gl.uniform1i(gl.getUniformLocation(shaders.parallax, 'sColorMap'), 0);
+      gl.uniform1i(gl.getUniformLocation(shaders.parallax, 'sNormalMap'), 1);
+      gl.uniform1i(gl.getUniformLocation(shaders.parallax, 'sHeightMap'), 2);
+      // Initial shader options
+      gl.uniform1i(gl.getUniformLocation(shaders.parallax, 'uUsePom'), usePom);
+      gl.uniform1i(gl.getUniformLocation(shaders.parallax, 'uDisplayNormalMap'), displayNormalMap);
+      // Scale and bias for parallax offset mapping
+      // These need to be adjusted to the texture used
+      gl.uniform1f(gl.getUniformLocation(shaders.parallax, 'uScale'), 0.07);
+      gl.uniform1f(gl.getUniformLocation(shaders.parallax, 'uBias'), -0.025);
+    }
+
+    function loadTextures() {
+      textures.colorMap = loadTexture("./data/textures/stone_color.png");
+      textures.normalMap = loadTexture("./data/textures/stone_normal.png");
+      textures.heightMap = loadTexture("./data/textures/stone_height.png");
+    }
+
+    function setMatrixUniforms() {
+      mat4.perspective(pMatrix, 45, gl.viewportWidth/gl.viewportHeight, 0.1, 256);
+      mat4.identity(mvMatrix);
+      mat4.translate(mvMatrix, mvMatrix, [0, 0, zoom]);
+
+      mat4.rotate(mvMatrix, mvMatrix, rotation[0] * deg_to_rad, [1, 0, 0]);
+      mat4.rotate(mvMatrix, mvMatrix, rotation[1] * deg_to_rad, [0, 1, 0]);
+
+      mat4.translate(mvMatrix, mvMatrix, [-0.5, -0.5, 0.0]);
+
+      mat3.fromMat4(uNormalMatrix, mvMatrix);
+      mat3.invert(uNormalMatrix, uNormalMatrix);
+      mat3.transpose(uNormalMatrix, uNormalMatrix);
+
+      gl.useProgram(shaders.parallax);
+      gl.uniformMatrix4fv(shaders.parallax.pMatrixUniform, false, pMatrix);
+      gl.uniformMatrix4fv(shaders.parallax.mvMatrixUniform, false, mvMatrix);
+      gl.uniformMatrix3fv(shaders.parallax.normalMatrixUniform, false, uNormalMatrix);
+
+      // Pass camera position to vertex
+      gl.uniform3f(shaders.parallax.cameraPosUniform, 0.5, 0.5, zoom);
+    }
+
+    /*
+      Calculate tangents that are used alongside normals (preset) and binormals (calculated in the shader as normal cross tangent)
+      to generate the (t)angent-(b)inormal-(n)ormal matrix (TBN-Matrix) used to convert tangent space coordinates (from the normal map)
+      into object coordinates
+     */
+    function calculateTangents(vertices, texcoords, normals) {
+      var tangents = [];
+
+      for (var t = 0; t < 2; t++) {
+
+        var i0 = t*6;
+        var i1 = t*6+2;
+        var i2 = t*6+4;
+
+        var v0 = vec3.fromValues(vertices[i0], vertices[i0+1], 0.0);
+        var v1 = vec3.fromValues(vertices[i1], vertices[i1+1], 0.0);
+        var v2 = vec3.fromValues(vertices[i2], vertices[i2+1], 0.0);
+
+        var e0 = vec3.fromValues(0, texcoords[i1] - texcoords[i0], texcoords[i1+1] - texcoords[i0+1]);
+        var e1 = vec3.fromValues(0, texcoords[i2] - texcoords[i0], texcoords[i2+1] - texcoords[i0+1]);
+
+        var epsilon = 1e-6;
+
+        var tmpT = vec3.create();
+        var tmpB = vec3.create();
+
+        for (var k = 0; k < 3; k++) {
+          e0[0] = v1[k] - v0[k];
+          e1[0] = v2[k] - v0[k];
+          var tmpVec = vec3.create();
+          vec3.cross(tmpVec, e0, e1);
+          // Use small epsilon to cope with numerical instability
+          if (Math.abs(tmpVec[0]) > epsilon) {
+            tmpT[k] = -tmpVec[1] / tmpVec[0];
+            tmpB[k] = -tmpVec[2] / tmpVec[0];
+          } else {
+            tmpT[k] = 0;
+            tmpB[k] = 0;
+          }
+        }
+
+        vec3.normalize(tmpT, tmpT);
+        vec3.normalize(tmpB, tmpB);
+        var normal = vec3.create();
+        vec3.cross(normal, tmpT, tmpB);
+        vec3.normalize(normal, normal);
+
+        // We use per-vertex tangents here, for a complex model you'd average the
+        // tangents amongst shared vertices
+        for (var v = 0; v < 3; v++) {
+          tangent = vec3.create();
+          vec3.cross(tangent, tmpB, normal);
+          tangents.push(tangent[0], tangent[1], tangent[2]);
+        }
+
+      }
+
+      return tangents;
+    }
+
+    function setupBuffers() {
+      // Define a simple triangle
+      var vertices = [
+        0, 0,
+        1, 0,
+        0, 1,
+        0, 1,
+        1, 0,
+        1, 1
+      ];
+      var texcoords = [
+        0, 0,
+        1, 0,
+        0, 1,
+        0, 1,
+        1, 0,
+        1, 1
+      ];
+      var normals = [
+        0, 0, 1,
+        0, 0, 1,
+        0, 0, 1,
+        0, 0, 1,
+        0, 0, 1,
+        0, 0, 1
+      ]
+
+      buffers.vertices = generateArrayBuffer(new Float32Array(vertices), gl.STATIC_DRAW, 2);
+      buffers.texcoords = generateArrayBuffer(new Float32Array(texcoords), gl.STATIC_DRAW, 2);
+      buffers.normals = generateArrayBuffer(new Float32Array(normals), gl.STATIC_DRAW, 3);
+
+      var tangents = calculateTangents(vertices, texcoords, normals);
+      buffers.tangents = generateArrayBuffer(new Float32Array(tangents), gl.STATIC_DRAW, 3);
+    }
+
+    function webGLStart() {
+      canvas = document.getElementById("webGLcanvas");
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      initGL(canvas);
+      initScene();
+
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
+
+      startTime = window.webkitAnimationStartTime || window.mozAnimationStartTime || new Date().getTime();
+      lastTimeStamp = startTime;
+      lastFpsTimeStamp = startTime;
+
+      firstRenderInterval = setInterval(render, 150);
+    }
+
+    function drawScene() {
+      gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      setMatrixUniforms();
+
+      gl.useProgram(shaders.parallax);
+      gl.uniform3f(gl.getUniformLocation(shaders.parallax, 'uLightPos'), 0.5 + Math.sin(degTimer * deg_to_rad) * 0.25, 0.5 +  + Math.cos(degTimer * deg_to_rad) * 0.25, 0);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, textures.colorMap);
+
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, textures.normalMap);
+
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, textures.heightMap);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertices);
+      gl.enableVertexAttribArray(shaders.parallax.vertexPositionAttribute);
+      gl.vertexAttribPointer(shaders.parallax.vertexPositionAttribute, 2, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texcoords);
+      gl.enableVertexAttribArray(shaders.parallax.texcoordAttribute);
+      gl.vertexAttribPointer(shaders.parallax.texcoordAttribute, 2, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normals);
+      gl.enableVertexAttribArray(shaders.parallax.normalAttribute);
+      gl.vertexAttribPointer(shaders.parallax.normalAttribute, 3, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.tangents);
+      gl.enableVertexAttribArray(shaders.parallax.tangentAttribute);
+      gl.vertexAttribPointer(shaders.parallax.tangentAttribute, 3, gl.FLOAT, false, 0, 0);
+
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+      gl.disableVertexAttribArray(shaders.parallax.vertexPositionAttribute);
+      gl.disableVertexAttribArray(shaders.parallax.texcoordAttribute);
+      gl.disableVertexAttribArray(shaders.parallax.tangentAttribute);
+
+    }
+
+    function render() {
+      clearInterval(firstRenderInterval);
+
+      time = window.webkitAnimationStartTime || window.mozAnimationStartTime || new Date().getTime();
+
+      if(time - lastFpsTimeStamp >= 1000) {
+           framesPerSecond = frameCount;
+           frameCount = 0;
+           lastFpsTimeStamp = time;
+           hudScope.$apply('fps = "' + framesPerSecond + ' fps"');
+      }
+
+      requestAnimationFrame(render);
+      drawScene();
+
+      timeFactor = (time - lastTimeStamp);
+
+      if (!paused) {
+        degTimer += timeFactor * 0.05;
+        if (degTimer > 360.0) {
+          degTimer -= 360.0;
+        }
+      }
+
+      ++frameCount;
+      lastTimeStamp = time;
+
+    }
+
+    function mouseDownHandler(event) {
+      mouseDown = true;
+      mouseX = event.pageX;
+      mouseY = event.pageY;
+    	event.preventDefault();
+    	return true;
+    }
+
+    function mouseMoveHandler(event) {
+    	if (mouseDown) {
+        var dx = event.pageX - mouseX;
+        var dy = event.pageY - mouseY;
+        rotation[0] += dy * 0.5;
+        rotation[1] += dx * 0.5;
+        mouseX = event.pageX;
+        mouseY = event.pageY;
+    	}
+    	event.preventDefault();
+    	return true;
+    }
+
+    function mouseUpHandler(event) {
+      mouseDown = false;
+    	event.preventDefault();
+    	return true;
+    }
+
+    function mouseWheelHandler(event) {
+      zoom += event.wheelDelta < 0 ? -0.25 : 0.25;
+      event.preventDefault();
+      return true;
+    }
+
+    function keyHandler(event) {
+      var keyPressed = String.fromCharCode(event.keyCode);
+      if (keyPressed == 'T') {
+        usePom = !usePom;
+        gl.useProgram(shaders.parallax);
+        gl.uniform1i(gl.getUniformLocation(shaders.parallax, 'uUsePom'), usePom);
+      }
+      if (keyPressed == 'N') {
+        displayNormalMap = !displayNormalMap;
+        gl.useProgram(shaders.parallax);
+        gl.uniform1i(gl.getUniformLocation(shaders.parallax, 'uDisplayNormalMap'), displayNormalMap);
+      }
+      if (keyPressed == 'P') {
+        paused = !paused;
+      }
+    };
+
+    angular.module("hud", []).
+    controller("hudController", function($scope){
+      $scope.fps = "0 fps";
+    });
+    angular.bootstrap(document.getElementById("hud"), ["hud"]);
+    hudScope = angular.element(document.getElementById("hud")).scope();
+
+    webGLStart();
+
+    window.addEventListener('resize', resizeCanvas, false);
+    document.addEventListener('mousedown', mouseDownHandler, false);
+    document.addEventListener('mouseup', mouseUpHandler, false);
+    document.addEventListener('mousemove', mouseMoveHandler, false);
+    window.addEventListener('keydown', keyHandler, false);
+
+
+    if (canvas.addEventListener) {
+      canvas.addEventListener( 'mousewheel', mouseWheelHandler, false );
+      canvas.addEventListener( 'DOMMouseScroll', mouseWheelHandler, false );
+    } else if (canvas.attachEvent){
+      canvasattachEvent('onmousewheel', mouseWheelHandler);
+    }
+
+
+  </script>
+
+</body>
+</html>
