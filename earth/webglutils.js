@@ -29,7 +29,7 @@ function getWebGLContext(canvas, target, antialiasing) {
   try {
     gl = canvas.getContext(target, { antialias: antialiasing });
     if (!gl) {
-      gl = canvas.getContext("experiemental-" + target, { antialias: antialiasing });
+      gl = canvas.getContext("experimental-" + target, { antialias: antialiasing });
     }
     gl.viewportWidth = canvas.width;
     gl.viewportHeight = canvas.height;
